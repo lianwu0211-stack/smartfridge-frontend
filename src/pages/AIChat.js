@@ -2,9 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
 const API = "http://localhost:8000";
-// Replace with your actual Dify API key and endpoint
-const DIFY_API = "https://api.dify.ai/v1/chat-messages";
-const DIFY_KEY = "YOUR_DIFY_API_KEY";
 
 export default function AIChat() {
   const [messages, setMessages] = useState([
@@ -17,11 +14,16 @@ export default function AIChat() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [conversationId, setConversationId] = useState("");
+
+  // ✅ 新增：购物清单相关状态
+  const [addingToShopping, setAddingToShopping] = useState(false);
+  const [shoppingAdded, setShoppingAdded] = useState([]);  // 最近一次添加的食材
+  const [lastUserMessage, setLastUserMessage] = useState(""); // 最后一条用户消息
+
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
-  const userId = localStorage.getItem("user_id");
-  const token = localStorage.getItem("token");
+  const userId = localStorage.getItem("user_id") || "1";
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -33,45 +35,22 @@ export default function AIChat() {
 
     setInput("");
     setError("");
+    setShoppingAdded([]); // 清空上次购物添加结果
+    setLastUserMessage(text);
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setLoading(true);
 
     try {
-      // Option A: Call via your own backend (recommended)
-      let reply = "";
-      try {
-        const res = await axios.post(
-          `${API}/ai/chat`,
-          { message: text, user_id: userId, conversation_id: conversationId },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        reply = res.data.answer || res.data.message || "收到！";
-        if (res.data.conversation_id) setConversationId(res.data.conversation_id);
-      } catch {
-        // Option B: Fallback — call Dify directly
-        const difyRes = await axios.post(
-          DIFY_API,
-          {
-            inputs: {},
-            query: text,
-            response_mode: "blocking",
-            conversation_id: conversationId || "",
-            user: `user_${userId}`,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${DIFY_KEY}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        reply = difyRes.data.answer;
-        setConversationId(difyRes.data.conversation_id || "");
-      }
-
+      const res = await axios.post(`${API}/ai/chat`, {
+        message: text,
+        user_id: userId,
+        conversation_id: conversationId || "",
+      });
+      const reply = res.data.answer || "收到！";
+      if (res.data.conversation_id) setConversationId(res.data.conversation_id);
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-    } catch (err) {
-      setError("AI 服务暂时不可用，请检查后端或 Dify 配置");
+    } catch {
+      setError("AI 服务暂时不可用，请稍后再试");
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: "⚠️ 抱歉，我暂时无法回答，请稍后再试。" },
@@ -79,6 +58,31 @@ export default function AIChat() {
     } finally {
       setLoading(false);
       inputRef.current?.focus();
+    }
+  };
+
+  // ✅ 新增：点击按钮后调用 /ai/chat-with-shopping，把缺少的食材加入购物清单
+  const handleAddToShopping = async () => {
+    if (!lastUserMessage) return;
+    setAddingToShopping(true);
+    setError("");
+    setShoppingAdded([]);
+    try {
+      const res = await axios.post(`${API}/ai/chat-with-shopping`, {
+        message: lastUserMessage,
+        user_id: userId,
+        conversation_id: conversationId || "",
+      });
+      const added = res.data.added_to_shopping || [];
+      if (added.length > 0) {
+        setShoppingAdded(added);
+      } else {
+        setShoppingAdded(["冰箱已有所有食材，无需补货 ✅"]);
+      }
+    } catch {
+      setError("添加购物清单失败，请重试");
+    } finally {
+      setAddingToShopping(false);
     }
   };
 
@@ -91,6 +95,9 @@ export default function AIChat() {
     "我有牛肉200g、西兰花，要增肌，喜欢川菜",
     "冰箱里有牛奶和鸡蛋，推荐健康早餐",
   ];
+
+  // 是否显示"加入购物清单"按钮（有 AI 回复且不在加载中）
+  const showShoppingBtn = messages.length > 1 && !loading && lastUserMessage;
 
   return (
     <div style={styles.bg}>
@@ -124,7 +131,7 @@ export default function AIChat() {
             ["🥬", "优先推荐快过期食材"],
             ["🏷️", "按你的 Tag 筛选"],
             ["📊", "提供卡路里参考"],
-            ["🚫", "只用知识库菜谱"],
+            ["🛒", "自动补全购物清单"],
           ].map(([icon, text]) => (
             <div key={text} style={styles.featureItem}>
               <span>{icon}</span>
@@ -156,22 +163,16 @@ export default function AIChat() {
                   justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
                 }}
               >
-                {msg.role === "assistant" && (
-                  <div style={styles.msgAvatar}>🤖</div>
-                )}
-                <div
-                  style={{
-                    ...styles.bubble,
-                    ...(msg.role === "user" ? styles.bubbleUser : styles.bubbleAI),
-                  }}
-                >
+                {msg.role === "assistant" && <div style={styles.msgAvatar}>🤖</div>}
+                <div style={{
+                  ...styles.bubble,
+                  ...(msg.role === "user" ? styles.bubbleUser : styles.bubbleAI),
+                }}>
                   {msg.content.split("\n").map((line, j) => (
                     <span key={j}>{line}{j < msg.content.split("\n").length - 1 && <br />}</span>
                   ))}
                 </div>
-                {msg.role === "user" && (
-                  <div style={styles.msgAvatar}>👤</div>
-                )}
+                {msg.role === "user" && <div style={styles.msgAvatar}>👤</div>}
               </div>
             ))}
 
@@ -187,6 +188,39 @@ export default function AIChat() {
             )}
             <div ref={bottomRef} />
           </div>
+
+          {/* ✅ 新增：购物清单按钮区域 */}
+          {showShoppingBtn && (
+            <div style={styles.shoppingBtnArea}>
+              <button
+                style={{
+                  ...styles.shoppingBtn,
+                  opacity: addingToShopping ? 0.7 : 1,
+                }}
+                onClick={handleAddToShopping}
+                disabled={addingToShopping}
+              >
+                {addingToShopping ? "⏳ 分析中..." : "🛒 缺少的食材加入购物清单"}
+              </button>
+
+              {/* 显示添加结果 */}
+              {shoppingAdded.length > 0 && (
+                <div style={styles.shoppingResult}>
+                  {shoppingAdded[0].includes("无需") ? (
+                    <span>{shoppingAdded[0]}</span>
+                  ) : (
+                    <>
+                      <span style={{ marginRight: 6 }}>✅ 已加入购物清单：</span>
+                      <span style={{ color: "#34d399", fontWeight: 600 }}>
+                        {shoppingAdded.join("、")}
+                      </span>
+                      <a href="/shopping" style={styles.goShoppingLink}>→ 查看清单</a>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {error && <div style={styles.error}>⚠️ {error}</div>}
 
@@ -257,13 +291,8 @@ const styles = {
     color: "rgba(255,255,255,0.65)", fontSize: 12, cursor: "pointer",
     textAlign: "left", lineHeight: 1.4, marginBottom: 4,
   },
-  sidebarDivider: {
-    borderTop: "1px solid rgba(255,255,255,0.07)", margin: "12px 0",
-  },
-  featureItem: {
-    display: "flex", alignItems: "center", gap: 8,
-    padding: "6px 0",
-  },
+  sidebarDivider: { borderTop: "1px solid rgba(255,255,255,0.07)", margin: "12px 0" },
+  featureItem: { display: "flex", alignItems: "center", gap: 8, padding: "6px 0" },
   featureText: { fontSize: 12, color: "rgba(255,255,255,0.45)" },
   chatWrapper: {
     flex: 1, display: "flex", flexDirection: "column",
@@ -287,14 +316,11 @@ const styles = {
   },
   messages: {
     flex: 1, overflowY: "auto", padding: "20px",
-    display: "flex", flexDirection: "column", gap: 14, minHeight: 400, maxHeight: 520,
+    display: "flex", flexDirection: "column", gap: 14, minHeight: 300, maxHeight: 460,
   },
   msgRow: { display: "flex", gap: 10, alignItems: "flex-end" },
   msgAvatar: { fontSize: 22, flexShrink: 0 },
-  bubble: {
-    maxWidth: "72%", padding: "12px 16px", borderRadius: 16,
-    fontSize: 14, lineHeight: 1.65,
-  },
+  bubble: { maxWidth: "72%", padding: "12px 16px", borderRadius: 16, fontSize: 14, lineHeight: 1.65 },
   bubbleUser: {
     background: "linear-gradient(135deg, #6d28d9, #4c1d95)",
     color: "#fff", borderBottomRightRadius: 4,
@@ -303,14 +329,36 @@ const styles = {
     background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
     color: "rgba(255,255,255,0.85)", borderBottomLeftRadius: 4,
   },
-  typingBubble: {
-    display: "flex", alignItems: "center", gap: 5, padding: "14px 18px",
-  },
+  typingBubble: { display: "flex", alignItems: "center", gap: 5, padding: "14px 18px" },
   dot: {
     display: "inline-block", width: 7, height: 7, borderRadius: "50%",
     background: "rgba(255,255,255,0.4)",
     animation: "bounce 0.9s ease-in-out infinite",
   },
+
+  // ✅ 新增样式：购物清单按钮区
+  shoppingBtnArea: {
+    padding: "10px 20px 4px",
+    borderTop: "1px solid rgba(255,255,255,0.06)",
+    display: "flex", flexDirection: "column", gap: 8,
+  },
+  shoppingBtn: {
+    padding: "10px 20px", borderRadius: 10, border: "none", cursor: "pointer",
+    background: "linear-gradient(135deg, #059669, #047857)",
+    color: "#fff", fontSize: 13, fontWeight: 700,
+    boxShadow: "0 3px 12px rgba(5,150,105,0.3)", transition: "opacity 0.2s",
+    alignSelf: "flex-start",
+  },
+  shoppingResult: {
+    fontSize: 13, color: "rgba(255,255,255,0.7)",
+    background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)",
+    borderRadius: 8, padding: "8px 14px", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap",
+  },
+  goShoppingLink: {
+    marginLeft: 8, color: "#34d399", fontWeight: 700,
+    textDecoration: "none", fontSize: 13,
+  },
+
   error: {
     margin: "0 20px 12px", padding: "10px 14px", borderRadius: 10,
     background: "rgba(255,80,80,0.12)", border: "1px solid rgba(255,80,80,0.25)",

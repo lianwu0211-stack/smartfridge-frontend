@@ -22,7 +22,8 @@ const TAG_COLORS = {
 };
 
 export default function TagSelect() {
-  const [tags, setTags] = useState([]);
+  // ✅ 修改1：初始化为 object，不是 []
+  const [tags, setTags] = useState({ goal: [], diet: [], region: [] });
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -34,6 +35,7 @@ export default function TagSelect() {
   useEffect(() => {
     axios
       .get(`${API}/tags`)
+      // ✅ 修改2：res.data 本身就是 { goal:[...], diet:[...], region:[...] }，直接 setTags
       .then((res) => setTags(res.data))
       .catch(() => setError("无法加载标签，请检查后端服务"))
       .finally(() => setLoading(false));
@@ -51,8 +53,9 @@ export default function TagSelect() {
     setSaving(true);
     try {
       await axios.post(
-        `${API}/users/${userId}/tags`,
-        { tag_ids: selected },
+        // ✅ 修改3：接口路径改为 /user/tags，user_id 放进 body
+        `${API}/user/tags`,
+        { user_id: Number(userId), tag_ids: selected },
         { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
       );
       setSuccess("偏好已保存！正在跳转...");
@@ -64,13 +67,7 @@ export default function TagSelect() {
     }
   };
 
-  // Group tags by type
-  const grouped = tags.reduce((acc, tag) => {
-    const type = tag.tag_type?.name || "goal";
-    if (!acc[type]) acc[type] = [];
-    acc[type].push(tag);
-    return acc;
-  }, {});
+  // ✅ 修改4：删掉原来的 tags.reduce(...)，直接用 tags（已经是分好组的 object）
 
   return (
     <div style={styles.bg}>
@@ -96,7 +93,8 @@ export default function TagSelect() {
           </div>
         ) : (
           <div style={styles.groups}>
-            {Object.entries(grouped).map(([type, tagList]) => {
+            {/* ✅ 修改5：直接用 tags，不用 grouped */}
+            {Object.entries(tags).map(([type, tagList]) => {
               const color = TAG_COLORS[type] || TAG_COLORS.goal;
               return (
                 <div key={type} style={styles.group}>
@@ -108,11 +106,12 @@ export default function TagSelect() {
                   </div>
                   <div style={styles.tagRow}>
                     {tagList.map((tag) => {
-                      const isSelected = selected.includes(tag.id);
+                      // ✅ 修改6：字段名用 tag.tag_id 和 tag.tag_name
+                      const isSelected = selected.includes(tag.tag_id);
                       return (
                         <button
-                          key={tag.id}
-                          onClick={() => toggleTag(tag.id)}
+                          key={tag.tag_id}
+                          onClick={() => toggleTag(tag.tag_id)}
                           style={{
                             ...styles.tag,
                             background: isSelected ? color.bg : "rgba(255,255,255,0.04)",
@@ -122,7 +121,7 @@ export default function TagSelect() {
                           }}
                         >
                           {isSelected && <span style={{ marginRight: 5 }}>✓</span>}
-                          {tag.value}
+                          {tag.tag_name}
                         </button>
                       );
                     })}

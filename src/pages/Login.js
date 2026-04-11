@@ -23,8 +23,13 @@ export default function Login() {
           email: form.email,
           password: form.password,
         });
-        localStorage.setItem("token", res.data.token);
-        localStorage.setItem("user_id", res.data.user_id);
+        localStorage.setItem("token", res.data.access_token);
+        // ✅ 修复：直接从响应体取 user_id（后端已修复返回此字段）
+        // 备用方案：若 user_id 意外缺失，则从 JWT payload 的 sub 字段解析
+        const userId =
+          res.data.user_id ??
+          JSON.parse(atob(res.data.access_token.split(".")[1])).sub;
+        localStorage.setItem("user_id", String(userId));
         setSuccess("登录成功！正在跳转...");
         setTimeout(() => (window.location.href = "/tags"), 1000);
       } else {
@@ -45,12 +50,10 @@ export default function Login() {
 
   return (
     <div style={styles.bg}>
-      {/* Background blobs */}
       <div style={styles.blob1} />
       <div style={styles.blob2} />
 
       <div style={styles.card}>
-        {/* Logo */}
         <div style={styles.logoRow}>
           <div style={styles.logoIcon}>❄️</div>
           <span style={styles.logoText}>SmartFridge</span>
@@ -58,7 +61,6 @@ export default function Login() {
 
         <p style={styles.tagline}>AI 智能食材管理 · 减少浪费 · 个性推荐</p>
 
-        {/* Toggle */}
         <div style={styles.toggle}>
           <button
             style={{ ...styles.toggleBtn, ...(isLogin ? styles.toggleActive : {}) }}
@@ -74,7 +76,6 @@ export default function Login() {
           </button>
         </div>
 
-        {/* Form */}
         <div style={styles.form}>
           {!isLogin && (
             <div style={styles.fieldGroup}>
@@ -139,120 +140,60 @@ const styles = {
     fontFamily: "'Segoe UI', sans-serif",
   },
   blob1: {
-    position: "absolute",
-    width: 400,
-    height: 400,
-    borderRadius: "50%",
-    background: "rgba(0,200,255,0.08)",
-    top: -100,
-    left: -100,
-    filter: "blur(60px)",
+    position: "absolute", width: 400, height: 400, borderRadius: "50%",
+    background: "rgba(0,200,255,0.08)", top: -100, left: -100, filter: "blur(60px)",
   },
   blob2: {
-    position: "absolute",
-    width: 350,
-    height: 350,
-    borderRadius: "50%",
-    background: "rgba(0,255,180,0.07)",
-    bottom: -80,
-    right: -80,
-    filter: "blur(60px)",
+    position: "absolute", width: 350, height: 350, borderRadius: "50%",
+    background: "rgba(0,255,180,0.07)", bottom: -80, right: -80, filter: "blur(60px)",
   },
   card: {
     background: "rgba(255,255,255,0.05)",
     backdropFilter: "blur(20px)",
     border: "1px solid rgba(255,255,255,0.12)",
-    borderRadius: 24,
-    padding: "40px 44px",
-    width: "100%",
-    maxWidth: 420,
-    boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
-    zIndex: 1,
+    borderRadius: 24, padding: "40px 44px",
+    width: "100%", maxWidth: 420,
+    boxShadow: "0 24px 60px rgba(0,0,0,0.4)", zIndex: 1,
   },
-  logoRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 6,
-  },
+  logoRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6 },
   logoIcon: { fontSize: 32 },
-  logoText: {
-    fontSize: 26,
-    fontWeight: 700,
-    color: "#fff",
-    letterSpacing: "-0.5px",
-  },
-  tagline: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 13,
-    marginBottom: 28,
-    marginTop: 2,
-  },
+  logoText: { fontSize: 26, fontWeight: 700, color: "#fff", letterSpacing: "-0.5px" },
+  tagline: { color: "rgba(255,255,255,0.5)", fontSize: 13, marginBottom: 28, marginTop: 2 },
   toggle: {
-    display: "flex",
-    background: "rgba(255,255,255,0.07)",
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 28,
+    display: "flex", background: "rgba(255,255,255,0.07)",
+    borderRadius: 12, padding: 4, marginBottom: 28,
   },
   toggleBtn: {
-    flex: 1,
-    padding: "10px 0",
-    border: "none",
-    borderRadius: 9,
-    background: "transparent",
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 15,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "all 0.25s",
+    flex: 1, padding: "10px 0", border: "none", borderRadius: 9,
+    background: "transparent", color: "rgba(255,255,255,0.5)",
+    fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "all 0.25s",
   },
   toggleActive: {
-    background: "rgba(255,255,255,0.15)",
-    color: "#fff",
+    background: "rgba(255,255,255,0.15)", color: "#fff",
     boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
   },
   form: { display: "flex", flexDirection: "column", gap: 16 },
   fieldGroup: { display: "flex", flexDirection: "column", gap: 6 },
   label: { color: "rgba(255,255,255,0.65)", fontSize: 13, fontWeight: 500 },
   input: {
-    padding: "12px 16px",
-    borderRadius: 10,
+    padding: "12px 16px", borderRadius: 10,
     border: "1px solid rgba(255,255,255,0.15)",
     background: "rgba(255,255,255,0.07)",
-    color: "#fff",
-    fontSize: 15,
-    outline: "none",
-    transition: "border 0.2s",
+    color: "#fff", fontSize: 15, outline: "none", transition: "border 0.2s",
   },
   error: {
-    background: "rgba(255,80,80,0.15)",
-    border: "1px solid rgba(255,80,80,0.3)",
-    borderRadius: 8,
-    color: "#ff8080",
-    padding: "10px 14px",
-    fontSize: 13,
+    background: "rgba(255,80,80,0.15)", border: "1px solid rgba(255,80,80,0.3)",
+    borderRadius: 8, color: "#ff8080", padding: "10px 14px", fontSize: 13,
   },
   successMsg: {
-    background: "rgba(0,220,130,0.15)",
-    border: "1px solid rgba(0,220,130,0.3)",
-    borderRadius: 8,
-    color: "#00dc82",
-    padding: "10px 14px",
-    fontSize: 13,
+    background: "rgba(0,220,130,0.15)", border: "1px solid rgba(0,220,130,0.3)",
+    borderRadius: 8, color: "#00dc82", padding: "10px 14px", fontSize: 13,
   },
   submitBtn: {
-    marginTop: 4,
-    padding: "14px",
-    borderRadius: 12,
-    border: "none",
+    marginTop: 4, padding: "14px", borderRadius: 12, border: "none",
     background: "linear-gradient(135deg, #00b4d8, #0077b6)",
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: 700,
-    cursor: "pointer",
-    letterSpacing: "0.5px",
-    boxShadow: "0 4px 20px rgba(0,180,216,0.35)",
+    color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer",
+    letterSpacing: "0.5px", boxShadow: "0 4px 20px rgba(0,180,216,0.35)",
     transition: "opacity 0.2s",
   },
 };

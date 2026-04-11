@@ -8,13 +8,14 @@ export default function Shopping() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ ingredient_id: "", quantity: "" });
+  // ✅ 修复1：将 ingredient_id 改为 ingredient，匹配后端的数据类型
+  const [form, setForm] = useState({ ingredient: "", quantity: "" });
   const [adding, setAdding] = useState(false);
   const [toggling, setToggling] = useState(null);
 
-  const userId = localStorage.getItem("user_id");
+  const userId = localStorage.getItem("user_id") || "1"; // 确保默认值
   const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
   const fetchItems = async () => {
     try {
@@ -27,17 +28,24 @@ export default function Shopping() {
     }
   };
 
-  useEffect(() => { fetchItems(); }, []);
+  // ✅ 修复2：解决 useEffect 的黄色警告
+  useEffect(() => {
+    fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAdd = async () => {
-    if (!form.ingredient_id || !form.quantity) { setError("请填写所有字段"); return; }
+    if (!form.ingredient || !form.quantity) { setError("请填写所有字段"); return; }
     setAdding(true); setError("");
     try {
-      await axios.post(`${API}/shopping/${userId}`, {
-        ingredient_id: parseInt(form.ingredient_id),
+      // ✅ 修复3：修改请求路径为 /shopping，把 user_id 放进请求体
+      await axios.post(`${API}/shopping`, {
+        user_id: parseInt(userId),
+        ingredient: form.ingredient,
         quantity: parseFloat(form.quantity),
+        unit: "pcs" // 补充默认单位
       }, { headers });
-      setForm({ ingredient_id: "", quantity: "" });
+      setForm({ ingredient: "", quantity: "" });
       setShowAdd(false);
       fetchItems();
     } catch {
@@ -50,11 +58,14 @@ export default function Shopping() {
   const handleToggle = async (itemId, currentStatus) => {
     setToggling(itemId);
     try {
-      await axios.patch(`${API}/shopping/${itemId}/purchased`, {
+      // ✅ 修复4：匹配后端的 PUT 接口来更新购买状态
+      await axios.put(`${API}/shopping/${itemId}`, {
         is_purchased: !currentStatus,
       }, { headers });
+      
+      // ✅ 修复5：后端的主键叫 item_id
       setItems((prev) =>
-        prev.map((i) => i.id === itemId ? { ...i, is_purchased: !currentStatus } : i)
+        prev.map((i) => i.item_id === itemId ? { ...i, is_purchased: !currentStatus } : i)
       );
     } catch {
       setError("更新失败");
@@ -77,7 +88,7 @@ export default function Shopping() {
           <div style={styles.navLogo}>❄️ SmartFridge</div>
           <div style={styles.navLinks}>
             <a href="/fridge" style={styles.navLink}>冰箱</a>
-            <a href="/shopping" style={{ ...styles.navLink, color: "#00b4d8" }}>购物清单</a>
+            <a href="/shopping" style={{ ...styles.navLink, color: "#00b4d8", fontWeight: "bold" }}>购物清单</a>
             <a href="/ai" style={styles.navLink}>AI推荐</a>
           </div>
         </div>
@@ -111,12 +122,12 @@ export default function Shopping() {
           <div style={styles.addCard}>
             <div style={styles.addRow}>
               <div style={styles.fieldGroup}>
-                <label style={styles.label}>食材 ID</label>
+                <label style={styles.label}>商品名称</label>
                 <input
                   style={styles.input}
-                  placeholder="如：1（西红柿）"
-                  value={form.ingredient_id}
-                  onChange={(e) => setForm({ ...form, ingredient_id: e.target.value })}
+                  placeholder="如：西红柿"
+                  value={form.ingredient}
+                  onChange={(e) => setForm({ ...form, ingredient: e.target.value })}
                 />
               </div>
               <div style={styles.fieldGroup}>
@@ -124,6 +135,7 @@ export default function Shopping() {
                 <input
                   style={styles.input}
                   placeholder="如：2"
+                  type="number"
                   value={form.quantity}
                   onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                 />
@@ -154,7 +166,7 @@ export default function Shopping() {
                 <h2 style={styles.sectionTitle}>🛒 待购买</h2>
                 {pending.map((item) => (
                   <ShoppingItem
-                    key={item.id}
+                    key={item.item_id} // ✅ 修复：item_id
                     item={item}
                     onToggle={handleToggle}
                     toggling={toggling}
@@ -171,7 +183,7 @@ export default function Shopping() {
                 </h2>
                 {purchased.map((item) => (
                   <ShoppingItem
-                    key={item.id}
+                    key={item.item_id} // ✅ 修复：item_id
                     item={item}
                     onToggle={handleToggle}
                     toggling={toggling}
@@ -197,7 +209,7 @@ export default function Shopping() {
 }
 
 function ShoppingItem({ item, onToggle, toggling, done }) {
-  const isLoading = toggling === item.id;
+  const isLoading = toggling === item.item_id; // ✅ 修复：item_id
   return (
     <div style={{ ...styles.itemCard, opacity: done ? 0.55 : 1 }}>
       <button
@@ -207,7 +219,7 @@ function ShoppingItem({ item, onToggle, toggling, done }) {
           border: done ? "2px solid #22c55e" : "2px solid rgba(255,255,255,0.2)",
           opacity: isLoading ? 0.5 : 1,
         }}
-        onClick={() => onToggle(item.id, item.is_purchased)}
+        onClick={() => onToggle(item.item_id, item.is_purchased)} // ✅ 修复：item_id
         disabled={isLoading}
       >
         {done && <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>✓</span>}
@@ -218,10 +230,11 @@ function ShoppingItem({ item, onToggle, toggling, done }) {
           textDecoration: done ? "line-through" : "none",
           color: done ? "rgba(255,255,255,0.35)" : "#fff",
         }}>
-          {item.ingredient?.name || `食材 #${item.ingredient_id}`}
+          {/* ✅ 修复6：直接渲染后端的 ingredient */}
+          {item.ingredient}
         </span>
         <span style={styles.itemQty}>
-          {item.quantity} {item.ingredient?.unit || ""}
+          {item.quantity} {item.unit || "pcs"}
         </span>
       </div>
       {!done && (
@@ -231,6 +244,7 @@ function ShoppingItem({ item, onToggle, toggling, done }) {
   );
 }
 
+// 样式完全保留原样
 const styles = {
   bg: {
     minHeight: "100vh",
