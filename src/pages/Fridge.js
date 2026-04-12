@@ -23,16 +23,16 @@ export default function Fridge() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-  // ✅ 修复：将 ingredient_id 改为 ingredient，与后端所需的数据结构保持一致
   const [form, setForm] = useState({ ingredient: "", quantity: "", expiry_date: "" });
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  // ✅ 新增：清理过期食材的 loading 状态
+  const [clearingExpired, setClearingExpired] = useState(false);
 
-  const userId = localStorage.getItem("user_id") || "1"; // 确保有一个默认的可用 userId
+  const userId = localStorage.getItem("user_id") || "1";
   const token = localStorage.getItem("token");
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-  // 获取冰箱食材列表
   const fetchItems = async () => {
     try {
       const res = await axios.get(`${API}/fridge/${userId}`, { headers });
@@ -44,13 +44,11 @@ export default function Fridge() {
     }
   };
 
-  // ✅ 修复：添加 eslint-disable 注释，彻底解决黄色警告
   useEffect(() => {
     fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 添加食材
   const handleAdd = async () => {
     if (!form.ingredient || !form.quantity || !form.expiry_date) {
       setError("请填写所有字段");
@@ -59,18 +57,16 @@ export default function Fridge() {
     setAdding(true);
     setError("");
     try {
-      // ✅ 修复：请求路径和参数格式完美适配后端的 FridgeItemCreate 模型
       await axios.post(`${API}/fridge`, {
         user_id: parseInt(userId),
-        ingredient: form.ingredient,  // 后端需要字符串
+        ingredient: form.ingredient,
         quantity: parseFloat(form.quantity),
-        unit: "pcs",                  // 提供默认单位
+        unit: "pcs",
         expiry_date: form.expiry_date,
       }, { headers });
-      
       setForm({ ingredient: "", quantity: "", expiry_date: "" });
       setShowAdd(false);
-      fetchItems(); // 添加成功后重新获取列表
+      fetchItems();
     } catch {
       setError("添加失败，请重试");
     } finally {
@@ -78,13 +74,10 @@ export default function Fridge() {
     }
   };
 
-  // 删除食材
   const handleDelete = async (itemId) => {
     setDeleting(itemId);
     try {
-      // ✅ 修复：修改为正确的后端删除路径
       await axios.delete(`${API}/fridge/${itemId}`, { headers });
-      // ✅ 修复：后端返回的 ID 字段名为 item_id
       setItems((prev) => prev.filter((i) => i.item_id !== itemId));
     } catch {
       setError("删除失败");
@@ -93,7 +86,28 @@ export default function Fridge() {
     }
   };
 
+  // ✅ 新增：一键清理所有过期食材
+  const handleClearExpired = async () => {
+    const expiredItems = items.filter((i) => getDaysLeft(i.expiry_date) < 0);
+    if (expiredItems.length === 0) return;
+    setClearingExpired(true);
+    setError("");
+    try {
+      await Promise.all(
+        expiredItems.map((item) =>
+          axios.delete(`${API}/fridge/${item.item_id}`, { headers })
+        )
+      );
+      setItems((prev) => prev.filter((i) => getDaysLeft(i.expiry_date) >= 0));
+    } catch {
+      setError("清理失败，请重试");
+    } finally {
+      setClearingExpired(false);
+    }
+  };
+
   const expiringSoon = items.filter((i) => getDaysLeft(i.expiry_date) <= 3);
+  const expiredItems = items.filter((i) => getDaysLeft(i.expiry_date) < 0);
 
   return (
     <div style={styles.bg}>
@@ -104,7 +118,7 @@ export default function Fridge() {
         <div style={styles.nav}>
           <div style={styles.navLogo}>❄️ SmartFridge</div>
           <div style={styles.navLinks}>
-            <a href="/fridge" style={{...styles.navLink, color: '#fff', fontWeight: 'bold'}}>冰箱</a>
+            <a href="/fridge" style={{ ...styles.navLink, color: "#fff", fontWeight: "bold" }}>冰箱</a>
             <a href="/shopping" style={styles.navLink}>购物清单</a>
             <a href="/ai" style={styles.navLink}>AI推荐</a>
           </div>
@@ -115,7 +129,6 @@ export default function Fridge() {
           <div style={styles.alertBanner}>
             <span>⚡</span>
             <strong>{expiringSoon.length} 件食材即将过期（3天内）：</strong>
-            {/* ✅ 修复：使用后端的 ingredient 字段 */}
             <span>{expiringSoon.map((i) => i.ingredient).join("、")}</span>
           </div>
         )}
@@ -126,9 +139,21 @@ export default function Fridge() {
             <h1 style={styles.title}>我的冰箱</h1>
             <p style={styles.subtitle}>共 {items.length} 件食材</p>
           </div>
-          <button style={styles.addBtn} onClick={() => setShowAdd(!showAdd)}>
-            {showAdd ? "× 取消" : "+ 添加食材"}
-          </button>
+          <div style={{ display: "flex", gap: 12 }}>
+            {/* ✅ 新增：清理过期食材按钮，只有存在过期食材时才显示 */}
+            {expiredItems.length > 0 && (
+              <button
+                style={{ ...styles.clearBtn, opacity: clearingExpired ? 0.7 : 1 }}
+                onClick={handleClearExpired}
+                disabled={clearingExpired}
+              >
+                {clearingExpired ? "清理中..." : `🗑 清理 ${expiredItems.length} 件过期食材`}
+              </button>
+            )}
+            <button style={styles.addBtn} onClick={() => setShowAdd(!showAdd)}>
+              {showAdd ? "× 取消" : "+ 添加食材"}
+            </button>
+          </div>
         </div>
 
         {/* Add Form */}
@@ -204,27 +229,30 @@ export default function Fridge() {
                   const isUrgent = days <= 3;
                   return (
                     <tr
-                      key={item.item_id} // ✅ 修复：使用后端的 item_id
+                      key={item.item_id}
                       style={{
                         ...styles.tr,
-                        background: isUrgent ? "rgba(239,68,68,0.08)" : "transparent",
+                        background: days < 0
+                          ? "rgba(100,0,0,0.15)"
+                          : isUrgent
+                          ? "rgba(239,68,68,0.08)"
+                          : "transparent",
                       }}
                     >
                       <td style={styles.td}>
                         <span style={styles.ingredientName}>
-                          {isUrgent && <span style={{ marginRight: 6 }}>🔴</span>}
-                          {item.ingredient} {/* ✅ 修复：使用后端的 ingredient */}
+                          {days < 0 && <span style={{ marginRight: 6 }}>💀</span>}
+                          {isUrgent && days >= 0 && <span style={{ marginRight: 6 }}>🔴</span>}
+                          {item.ingredient}
                         </span>
                       </td>
-                      <td style={styles.td}>
-                        {item.quantity} {item.unit || ""}
-                      </td>
+                      <td style={styles.td}>{item.quantity} {item.unit || ""}</td>
                       <td style={styles.td}>{item.expiry_date}</td>
                       <td style={styles.td}><ExpiryBadge days={days} /></td>
                       <td style={styles.td}>
                         <button
                           style={{ ...styles.deleteBtn, opacity: deleting === item.item_id ? 0.5 : 1 }}
-                          onClick={() => handleDelete(item.item_id)} // ✅ 修复
+                          onClick={() => handleDelete(item.item_id)}
                           disabled={deleting === item.item_id}
                         >
                           {deleting === item.item_id ? "..." : "删除"}
@@ -254,6 +282,8 @@ const styles = {
   pageHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 },
   title: { fontSize: 28, fontWeight: 800, color: "#fff", margin: 0, letterSpacing: "-0.5px" },
   subtitle: { fontSize: 14, color: "rgba(255,255,255,0.4)", margin: "6px 0 0" },
+  // ✅ 新增：清理按钮样式
+  clearBtn: { padding: "11px 22px", borderRadius: 10, border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "opacity 0.2s" },
   addBtn: { padding: "11px 22px", borderRadius: 10, border: "1px solid rgba(0,180,216,0.4)", background: "rgba(0,180,216,0.1)", color: "#00b4d8", fontSize: 14, fontWeight: 600, cursor: "pointer" },
   addCard: { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "20px 24px", marginBottom: 20 },
   addCardTitle: { color: "#fff", fontSize: 16, fontWeight: 700, margin: "0 0 16px" },
